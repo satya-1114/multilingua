@@ -1,0 +1,193 @@
+"""Centralized disaster & assignment enums / state-machine constants.
+
+Pydantic schemas in :mod:`app.schemas.disaster` narrow request/response bodies
+with ``Literal`` types; these tuples are the single source of truth those
+literals mirror. Import from here in service / repository / router layers
+instead of re-declaring string literals.
+"""
+from __future__ import annotations
+
+from typing import Final
+
+
+# -- Disaster type ------------------------------------------------------------
+
+DISASTER_TYPE_FLOOD: Final = "flood"
+DISASTER_TYPE_FIRE: Final = "fire"
+DISASTER_TYPE_CYCLONE: Final = "cyclone"
+DISASTER_TYPE_EARTHQUAKE: Final = "earthquake"
+DISASTER_TYPE_LANDSLIDE: Final = "landslide"
+DISASTER_TYPE_HEATWAVE: Final = "heatwave"
+DISASTER_TYPE_MEDICAL: Final = "medical"
+DISASTER_TYPE_INDUSTRIAL: Final = "industrial"
+DISASTER_TYPE_PUBLIC_SAFETY: Final = "public_safety"
+DISASTER_TYPE_OTHER: Final = "other"
+
+DISASTER_TYPES: Final[tuple[str, ...]] = (
+    DISASTER_TYPE_FLOOD,
+    DISASTER_TYPE_FIRE,
+    DISASTER_TYPE_CYCLONE,
+    DISASTER_TYPE_EARTHQUAKE,
+    DISASTER_TYPE_LANDSLIDE,
+    DISASTER_TYPE_HEATWAVE,
+    DISASTER_TYPE_MEDICAL,
+    DISASTER_TYPE_INDUSTRIAL,
+    DISASTER_TYPE_PUBLIC_SAFETY,
+    DISASTER_TYPE_OTHER,
+)
+
+
+# -- Severity -----------------------------------------------------------------
+
+DISASTER_SEVERITY_LOW: Final = "low"
+DISASTER_SEVERITY_MEDIUM: Final = "medium"
+DISASTER_SEVERITY_HIGH: Final = "high"
+DISASTER_SEVERITY_CRITICAL: Final = "critical"
+
+DISASTER_SEVERITIES: Final[tuple[str, ...]] = (
+    DISASTER_SEVERITY_LOW,
+    DISASTER_SEVERITY_MEDIUM,
+    DISASTER_SEVERITY_HIGH,
+    DISASTER_SEVERITY_CRITICAL,
+)
+
+
+# -- Disaster status ----------------------------------------------------------
+
+DISASTER_STATUS_REPORTED: Final = "reported"
+DISASTER_STATUS_VERIFIED: Final = "verified"
+DISASTER_STATUS_ACTIVE: Final = "active"
+DISASTER_STATUS_CONTAINED: Final = "contained"
+DISASTER_STATUS_RESOLVED: Final = "resolved"
+DISASTER_STATUS_CLOSED: Final = "closed"
+
+DISASTER_STATUSES: Final[tuple[str, ...]] = (
+    DISASTER_STATUS_REPORTED,
+    DISASTER_STATUS_VERIFIED,
+    DISASTER_STATUS_ACTIVE,
+    DISASTER_STATUS_CONTAINED,
+    DISASTER_STATUS_RESOLVED,
+    DISASTER_STATUS_CLOSED,
+)
+
+DISASTER_STATUSES_OPEN: Final[tuple[str, ...]] = (
+    DISASTER_STATUS_REPORTED,
+    DISASTER_STATUS_VERIFIED,
+    DISASTER_STATUS_ACTIVE,
+    DISASTER_STATUS_CONTAINED,
+)
+
+DISASTER_STATUSES_TERMINAL: Final[tuple[str, ...]] = (
+    DISASTER_STATUS_RESOLVED,
+    DISASTER_STATUS_CLOSED,
+)
+
+
+# -- Assignment status --------------------------------------------------------
+
+ASSIGNMENT_STATUS_ASSIGNED: Final = "assigned"
+ASSIGNMENT_STATUS_ACCEPTED: Final = "accepted"
+ASSIGNMENT_STATUS_IN_PROGRESS: Final = "in_progress"
+ASSIGNMENT_STATUS_COMPLETED: Final = "completed"
+ASSIGNMENT_STATUS_CANCELLED: Final = "cancelled"
+
+ASSIGNMENT_STATUSES: Final[tuple[str, ...]] = (
+    ASSIGNMENT_STATUS_ASSIGNED,
+    ASSIGNMENT_STATUS_ACCEPTED,
+    ASSIGNMENT_STATUS_IN_PROGRESS,
+    ASSIGNMENT_STATUS_COMPLETED,
+    ASSIGNMENT_STATUS_CANCELLED,
+)
+
+ASSIGNMENT_STATUSES_TERMINAL: Final[tuple[str, ...]] = (
+    ASSIGNMENT_STATUS_COMPLETED,
+    ASSIGNMENT_STATUS_CANCELLED,
+)
+
+
+# -- State machines -----------------------------------------------------------
+
+# Disaster lifecycle: REPORTED -> VERIFIED -> ACTIVE -> CONTAINED -> RESOLVED -> CLOSED.
+# Reopen: RESOLVED -> ACTIVE is the only backwards transition allowed.
+DISASTER_TRANSITIONS: Final[dict[str, tuple[str, ...]]] = {
+    DISASTER_STATUS_REPORTED: (DISASTER_STATUS_VERIFIED, DISASTER_STATUS_CLOSED),
+    DISASTER_STATUS_VERIFIED: (DISASTER_STATUS_ACTIVE, DISASTER_STATUS_CLOSED),
+    DISASTER_STATUS_ACTIVE: (DISASTER_STATUS_CONTAINED, DISASTER_STATUS_RESOLVED),
+    DISASTER_STATUS_CONTAINED: (DISASTER_STATUS_ACTIVE, DISASTER_STATUS_RESOLVED),
+    DISASTER_STATUS_RESOLVED: (DISASTER_STATUS_ACTIVE, DISASTER_STATUS_CLOSED),
+    DISASTER_STATUS_CLOSED: (),
+}
+
+# Assignment lifecycle. Volunteer path: ASSIGNED -> ACCEPTED -> IN_PROGRESS -> COMPLETED.
+# Cancellation is available from any non-terminal state.
+ASSIGNMENT_TRANSITIONS: Final[dict[str, tuple[str, ...]]] = {
+    ASSIGNMENT_STATUS_ASSIGNED: (
+        ASSIGNMENT_STATUS_ACCEPTED,
+        ASSIGNMENT_STATUS_CANCELLED,
+    ),
+    ASSIGNMENT_STATUS_ACCEPTED: (
+        ASSIGNMENT_STATUS_IN_PROGRESS,
+        ASSIGNMENT_STATUS_CANCELLED,
+    ),
+    ASSIGNMENT_STATUS_IN_PROGRESS: (
+        ASSIGNMENT_STATUS_COMPLETED,
+        ASSIGNMENT_STATUS_CANCELLED,
+    ),
+    ASSIGNMENT_STATUS_COMPLETED: (),
+    ASSIGNMENT_STATUS_CANCELLED: (),
+}
+
+
+# -- Attachment kind ----------------------------------------------------------
+
+ATTACHMENT_KIND_IMAGE: Final = "image"
+ATTACHMENT_KIND_DOCUMENT: Final = "document"
+ATTACHMENT_KIND_EVIDENCE: Final = "evidence"
+
+ATTACHMENT_KINDS: Final[tuple[str, ...]] = (
+    ATTACHMENT_KIND_IMAGE,
+    ATTACHMENT_KIND_DOCUMENT,
+    ATTACHMENT_KIND_EVIDENCE,
+)
+
+
+__all__ = [
+    "DISASTER_TYPE_FLOOD",
+    "DISASTER_TYPE_FIRE",
+    "DISASTER_TYPE_CYCLONE",
+    "DISASTER_TYPE_EARTHQUAKE",
+    "DISASTER_TYPE_LANDSLIDE",
+    "DISASTER_TYPE_HEATWAVE",
+    "DISASTER_TYPE_MEDICAL",
+    "DISASTER_TYPE_INDUSTRIAL",
+    "DISASTER_TYPE_PUBLIC_SAFETY",
+    "DISASTER_TYPE_OTHER",
+    "DISASTER_TYPES",
+    "DISASTER_SEVERITY_LOW",
+    "DISASTER_SEVERITY_MEDIUM",
+    "DISASTER_SEVERITY_HIGH",
+    "DISASTER_SEVERITY_CRITICAL",
+    "DISASTER_SEVERITIES",
+    "DISASTER_STATUS_REPORTED",
+    "DISASTER_STATUS_VERIFIED",
+    "DISASTER_STATUS_ACTIVE",
+    "DISASTER_STATUS_CONTAINED",
+    "DISASTER_STATUS_RESOLVED",
+    "DISASTER_STATUS_CLOSED",
+    "DISASTER_STATUSES",
+    "DISASTER_STATUSES_OPEN",
+    "DISASTER_STATUSES_TERMINAL",
+    "ASSIGNMENT_STATUS_ASSIGNED",
+    "ASSIGNMENT_STATUS_ACCEPTED",
+    "ASSIGNMENT_STATUS_IN_PROGRESS",
+    "ASSIGNMENT_STATUS_COMPLETED",
+    "ASSIGNMENT_STATUS_CANCELLED",
+    "ASSIGNMENT_STATUSES",
+    "ASSIGNMENT_STATUSES_TERMINAL",
+    "DISASTER_TRANSITIONS",
+    "ASSIGNMENT_TRANSITIONS",
+    "ATTACHMENT_KIND_IMAGE",
+    "ATTACHMENT_KIND_DOCUMENT",
+    "ATTACHMENT_KIND_EVIDENCE",
+    "ATTACHMENT_KINDS",
+]

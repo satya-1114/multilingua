@@ -1,0 +1,61 @@
+# Multi-stage production image for the FastAPI backend.
+# Non-root, minimal, healthchecked, ready for gunicorn+uvicorn workers.
+
+FROM python:3.12-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip wheel --wheel-dir /wheels -r requirements.txt gunicorn==22.0.0
+
+
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    APP_ENV=production
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpq5 curl tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 1001 platform \
+    && useradd --system --uid 1001 --gid platform --home /srv --shell /usr/sbin/nologin platform \
+    && mkdir -p /srv /var/lib/platform/uploads \
+    && chown -R platform:platform /srv /var/lib/platform
+
+WORKDIR /srv
+
+COPY --from=builder /wheels /wheels
+COPY requirements.txt .
+RUN pip install --no-index --find-links=/wheels -r requirements.txt gunicorn==22.0.0 \
+    && rm -rf /wheels
+
+COPY --chown=platform:platform . .
+
+USER platform
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -fsS http://localhost:8000/api/v1/system/health || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["gunicorn", "main:app", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--workers", "4", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "60", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "5", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--forwarded-allow-ips", "*"]

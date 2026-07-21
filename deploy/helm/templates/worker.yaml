@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: {{ include "platform.namespace" . }}
+  labels: { app: worker }
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector: { matchLabels: { app: worker } }
+  template:
+    metadata: { labels: { app: worker } }
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"
+          command: ["celery", "-A", "app.runtime.scheduler.celery_app.workflow_celery_app", "worker", "--loglevel=info", "--concurrency={{ .Values.worker.concurrency }}"]
+          envFrom:
+            - configMapRef: { name: platform-config }
+            - secretRef: { name: {{ .Values.existingSecret }} }

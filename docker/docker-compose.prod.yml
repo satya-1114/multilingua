@@ -1,0 +1,54 @@
+# Production reference stack. Assumes secrets are provided via environment.
+# Not tuned for HA — see deploy/k8s and deploy/helm for production topology.
+version: "3.9"
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-platform/backend:latest}
+    restart: always
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      APP_SECRET_KEY: ${APP_SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1G }
+        reservations: { cpus: "0.5", memory: 256M }
+
+  worker:
+    image: ${BACKEND_IMAGE:-platform/backend:latest}
+    restart: always
+    command: ["celery", "-A", "app.runtime.scheduler.celery_app.workflow_celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-4}"]
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      APP_SECRET_KEY: ${APP_SECRET_KEY}
+
+  scheduler:
+    image: ${BACKEND_IMAGE:-platform/backend:latest}
+    restart: always
+    command: ["celery", "-A", "app.runtime.scheduler.celery_app.workflow_celery_app", "beat", "--loglevel=info"]
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      APP_SECRET_KEY: ${APP_SECRET_KEY}
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-platform/frontend:latest}
+    restart: always
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

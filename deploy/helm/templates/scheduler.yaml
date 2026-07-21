@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: {{ include "platform.namespace" . }}
+  labels: { app: scheduler }
+spec:
+  replicas: {{ .Values.scheduler.replicaCount }}
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: scheduler } }
+  template:
+    metadata: { labels: { app: scheduler } }
+    spec:
+      containers:
+        - name: scheduler
+          image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"
+          command: ["celery", "-A", "app.runtime.scheduler.celery_app.workflow_celery_app", "beat", "--loglevel=info"]
+          envFrom:
+            - configMapRef: { name: platform-config }
+            - secretRef: { name: {{ .Values.existingSecret }} }

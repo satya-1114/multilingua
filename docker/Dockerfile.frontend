@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1.7
+# Multi-stage build for the TanStack Start frontend, served via nginx.
+
+# ------------------------------------------------------------------ #
+# Stage 1 — build with bun
+# ------------------------------------------------------------------ #
+FROM oven/bun:1.1-alpine AS builder
+
+WORKDIR /app
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
+
+COPY . .
+ENV NODE_ENV=production
+RUN bun run build
+
+# ------------------------------------------------------------------ #
+# Stage 2 — nginx runtime, non-root
+# ------------------------------------------------------------------ #
+FROM nginx:1.27-alpine AS runtime
+
+RUN addgroup -S app && adduser -S -G app app \
+ && mkdir -p /var/cache/nginx /var/run/nginx \
+ && chown -R app:app /var/cache/nginx /var/run/nginx /usr/share/nginx/html
+
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY --from=builder --chown=app:app /app/dist /usr/share/nginx/html
+
+USER app
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

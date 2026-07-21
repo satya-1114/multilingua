@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.core.exceptions import NotFoundError, ValidationError
+from app.core.responses import ok, paginated
+from app.dependencies.auth import require_perm
+from app.dependencies.db import get_db
+from app.dependencies.pagination import PageParams, page_params
+from app.models.campaign import Approval, Campaign
+from app.models.user import User
+from app.repositories import campaigns
+from app.schemas.campaign import CampaignCreate, CampaignUpdate
+from app.services import audit
+
+router = APIRouter()
+
+ALLOWED_TRANSITIONS: dict[str, set[str]] = {
+    "draft": {"pending_approval", "archived"},
+    "pending_approval": {"approved", "rejected", "draft"},
+    "approved": {"scheduled", "published", "archived"},
+    "rejected": {"draft", "archived"},
+    "scheduled": {"published", "draft", "archived"},
+    "published": {"archived"},
+    "archived": {"draft"},
+}
+
+
+def _serialize(c: Campaign) -> dict:
+    return {
+        "id": str(c.id),
+        "workspaceId": str(c.workspace_id),
+        "name": c.name,
+        "status": c.status,
+        "channels": c.channels or [],
+        "audienceCount": c.audience_count,
+        "startsAt": c.starts_at.isoformat() if c.starts_at else None,
+        "endsAt": c.ends_at.isoformat() if c.ends_at else None,
+        "createdAt": c.created_at.isoformat(),
+        "updatedAt": c.updated_at.isoformat(),
+        "deletedAt": c.deleted_at.isoformat() if c.deleted_at else None,
+    }
+
+
+def _from_camel(d: dict) -> dict:
+    for a, b in [("workspaceId", "workspace_id"), ("startsAt", "starts_at"), ("endsAt", "ends_at")]:
+        if a in d:
+            d[b] = d.pop(a)
+    return d
+
+
+def _transition(obj: Campaign, target: str) -> None:
+    allowed = ALLOWED_TRANSITIONS.get(obj.status, set())
+    if target not in allowed:
+        raise ValidationError(f"Cannot transition from '{obj.status}' to '{target}'")
+    obj.status = target
+
+
+def _audit(db, req, user, action, obj):
+    audit.log(db, action=action, module="campaign", actor_id=user.id,
+              workspace_id=obj.workspace_id, entity_id=str(obj.id),
+              entity_label=obj.name, ip=req.client.host if req.client else None,
+              ua=req.headers.get("user-agent"))
+
+
+@router.get("")
+def list_(pp: PageParams = Depends(page_params), db: Session = Depends(get_db),
+          _: User = Depends(require_perm("campaign:view"))):
+    items, total = campaigns.list(
+        db, page=pp.page, page_size=pp.page_size, search=pp.search,
+        search_fields=["name"], sort_by=pp.sort_by, sort_dir=pp.sort_dir,
+    )
+    return paginated([_serialize(x) for x in items], pp.page, pp.page_size, total)
+
+
+@router.post("", status_code=201)
+def create(payload: CampaignCreate, request: Request, db: Session = Depends(get_db),
+           user: User = Depends(require_perm("campaign:create"))):
+    data = _from_camel(payload.model_dump())
+    data["owner_id"] = user.id
+    obj = campaigns.create(db, data)
+    _audit(db, request, user, "create", obj)
+    return ok(_serialize(obj))
+
+
+@router.get("/{cid}")
+def get_(cid: str, db: Session = Depends(get_db),
+         _: User = Depends(require_perm("campaign:view"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    return ok(_serialize(obj))
+
+
+@router.patch("/{cid}")
+def update(cid: str, payload: CampaignUpdate, request: Request,
+           db: Session = Depends(get_db),
+           user: User = Depends(require_perm("campaign:edit"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    data = _from_camel(payload.model_dump(exclude_none=True))
+    if "status" in data and data["status"] != obj.status:
+        _transition(obj, data.pop("status"))
+    campaigns.update(db, obj, data)
+    _audit(db, request, user, "update", obj)
+    return ok(_serialize(obj))
+
+
+@router.delete("/{cid}")
+def delete(cid: str, request: Request, db: Session = Depends(get_db),
+           user: User = Depends(require_perm("campaign:delete"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    campaigns.soft_delete(db, obj)
+    _audit(db, request, user, "delete", obj)
+    return ok({"deleted": True})
+
+
+@router.post("/{cid}/restore")
+def restore(cid: str, request: Request, db: Session = Depends(get_db),
+            user: User = Depends(require_perm("campaign:edit"))):
+    obj = db.get(Campaign, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    obj.deleted_at = None
+    db.commit(); db.refresh(obj)
+    _audit(db, request, user, "restore", obj)
+    return ok(_serialize(obj))
+
+
+class ApprovalPayload(BaseModel):
+    note: str | None = None
+
+
+@router.post("/{cid}/submit")
+def submit(cid: str, request: Request, db: Session = Depends(get_db),
+           user: User = Depends(require_perm("campaign:edit"))):
+    obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    _transition(obj, "pending_approval")
+    db.add(Approval(campaign_id=obj.id, status="pending", reviewer_id=None))
+    db.commit(); db.refresh(obj)
+    _audit(db, request, user, "submit", obj)
+    return ok(_serialize(obj))
+
+
+@router.post("/{cid}/approve")
+def approve(cid: str, payload: ApprovalPayload, request: Request,
+            db: Session = Depends(get_db),
+            user: User = Depends(require_perm("campaign:approve"))):
+    obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    _transition(obj, "approved")
+    db.add(Approval(campaign_id=obj.id, status="approved",
+                    reviewer_id=user.id, note=payload.note))
+    db.commit(); db.refresh(obj)
+    _audit(db, request, user, "approve", obj)
+    return ok(_serialize(obj))
+
+
+@router.post("/{cid}/reject")
+def reject(cid: str, payload: ApprovalPayload, request: Request,
+           db: Session = Depends(get_db),
+           user: User = Depends(require_perm("campaign:approve"))):
+    obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    _transition(obj, "rejected")
+    db.add(Approval(campaign_id=obj.id, status="rejected",
+                    reviewer_id=user.id, note=payload.note))
+    db.commit(); db.refresh(obj)
+    _audit(db, request, user, "reject", obj)
+    return ok(_serialize(obj))
+
+
+class SchedulePayload(BaseModel):
+    startsAt: datetime
+    endsAt: datetime | None = None
+
+
+@router.post("/{cid}/schedule")
+def schedule(cid: str, payload: SchedulePayload, request: Request,
+             db: Session = Depends(get_db),
+             user: User = Depends(require_perm("campaign:launch"))):
+    obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    if payload.endsAt and payload.endsAt <= payload.startsAt:
+        raise ValidationError("endsAt must be after startsAt")
+    _transition(obj, "scheduled")
+    obj.starts_at = payload.startsAt
+    obj.ends_at = payload.endsAt
+    db.commit(); db.refresh(obj)
+    _audit(db, request, user, "schedule", obj)
+    return ok(_serialize(obj))
+
+
+@router.post("/{cid}/publish")
+def publish(cid: str, request: Request, db: Session = Depends(get_db),
+            user: User = Depends(require_perm("campaign:launch"))):
+    from app.services.campaign_execution import publish as publish_campaign
+
+    obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    # Auto-approve draft/pending workflow shortcut is handled by the transition
+    # rules — publish requires an approved or scheduled campaign.
+    if obj.status == "draft":
+        _transition(obj, "pending_approval")
+        _transition(obj, "approved")
+    elif obj.status == "pending_approval":
+        _transition(obj, "approved")
+    if obj.status != "scheduled":
+        _transition(obj, "scheduled")
+    if not obj.starts_at:
+        obj.starts_at = datetime.now(timezone.utc)
+    db.commit()
+    report = publish_campaign(db, campaign_id=str(obj.id), actor_id=user.id, scheduled_at=obj.starts_at)
+    db.refresh(obj)
+    _audit(db, request, user, "publish", obj)
+    return ok({
+        **_serialize(obj),
+        "execution": {
+            "channels": report.channels,
+            "deliveries": report.deliveries,
+            "recipientCount": report.recipient_count,
+        },
+    })
+
+
+
+@router.post("/{cid}/archive")
+def archive(cid: str, request: Request, db: Session = Depends(get_db),
+            user: User = Depends(require_perm("campaign:edit"))):
+    obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    _transition(obj, "archived")
+    db.commit(); db.refresh(obj)
+    _audit(db, request, user, "archive", obj)
+    return ok(_serialize(obj))
+
+
+@router.post("/{cid}/clone", status_code=201)
+def clone(cid: str, request: Request, db: Session = Depends(get_db),
+          user: User = Depends(require_perm("campaign:create"))):
+    src = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
+    dup = Campaign(
+        workspace_id=src.workspace_id, name=f"{src.name} (copy)", status="draft",
+        channels=list(src.channels or []), audience_count=src.audience_count,
+        owner_id=user.id,
+    )
+    db.add(dup); db.commit(); db.refresh(dup)
+    _audit(db, request, user, "clone", dup)
+    return ok(_serialize(dup))
+
+
+@router.get("/{cid}/approvals")
+def approvals(cid: str, db: Session = Depends(get_db),
+              _: User = Depends(require_perm("campaign:view"))):
+    from sqlalchemy import select
+    rows = db.scalars(select(Approval).where(Approval.campaign_id == cid)
+                      .order_by(Approval.created_at.desc())).all()
+    return ok({"items": [
+        {"id": str(a.id), "status": a.status, "reviewerId": str(a.reviewer_id) if a.reviewer_id else None,
+         "note": a.note, "createdAt": a.created_at.isoformat()} for a in rows
+    ]})

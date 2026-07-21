@@ -1,0 +1,79 @@
+# Local development stack for the platform.
+# Runs Postgres, Redis, backend (hot reload), Celery worker, scheduler, frontend.
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+      target: runtime
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg2://platform:platform@postgres:5432/platform
+      REDIS_URL: redis://redis:6379/0
+      APP_SECRET_KEY: dev-secret-key-not-for-production-use-only
+    ports: ["8000:8000"]
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+      target: worker
+    depends_on:
+      redis: { condition: service_healthy }
+      backend: { condition: service_started }
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg2://platform:platform@postgres:5432/platform
+      REDIS_URL: redis://redis:6379/0
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+      target: scheduler
+    depends_on:
+      redis: { condition: service_healthy }
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg2://platform:platform@postgres:5432/platform
+      REDIS_URL: redis://redis:6379/0
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    ports: ["8080:8080"]
+    depends_on:
+      backend: { condition: service_started }
+
+volumes:
+  pgdata:
