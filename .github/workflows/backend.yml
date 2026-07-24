@@ -1,19 +1,70 @@
 name: backend
+
 on:
   push:
     branches: [main]
-    paths: ["backend/**", ".github/workflows/backend.yml"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
   pull_request:
-    paths: ["backend/**", ".github/workflows/backend.yml"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: backend } }
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: platform
+          POSTGRES_DB: platform
+
+        ports:
+          - 5432:5432
+
+        options: >-
+          --health-cmd="pg_isready -U platform"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql+psycopg2://platform:platform@localhost:5432/platform
+      DATABASE_URL_ASYNC: postgresql+asyncpg://platform:platform@localhost:5432/platform
+      APP_SECRET_KEY: test-secret-that-is-long-enough
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12", cache: pip }
-      - run: pip install -r requirements.txt
-      - run: pip install pytest pytest-asyncio ruff pyyaml
-      # - run: ruff check app tests
-      - run: pytest -q
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pyyaml
+
+      # Uncomment after fixing Ruff issues
+      # - name: Lint
+      #   run: ruff check app tests
+
+      - name: Run Alembic Migrations
+        run: alembic upgrade head
+
+      - name: Run Tests
+        run: pytest -q
