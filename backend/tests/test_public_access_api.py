@@ -28,6 +28,7 @@ from app.models.public_access import PublicResource, PublicView, QRCode
 def pa_engine():
     from app.models.organization import Organization
     from app.models.user import User
+    from app.models.audit_log import AuditLog
 
     PublicResource.__table__.c["metadata"].type = JSON()
     QRCode.__table__.c["metadata"].type = JSON()
@@ -38,16 +39,18 @@ def pa_engine():
         poolclass=StaticPool,
         future=True,
     )
+
     for tbl in (
         User.__table__,
         Organization.__table__,
+        AuditLog.__table__,
         PublicResource.__table__,
         QRCode.__table__,
         PublicView.__table__,
     ):
         tbl.create(eng, checkfirst=True)
-    return eng
 
+    return eng
 
 @pytest.fixture
 def Session(pa_engine):
