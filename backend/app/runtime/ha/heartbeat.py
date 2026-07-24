@@ -8,7 +8,7 @@ when the lease is lost.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from app.core.logging import get_logger

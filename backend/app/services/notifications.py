@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification, NotificationPreference
-from app.models.user import User
 
 
 def _within_quiet_hours(prefs: NotificationPreference | None) -> bool:

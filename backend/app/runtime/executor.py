@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 
 from app.constants.workflow import (
     STEP_STATUS_FAILED,
-    STEP_STATUS_SKIPPED,
     WORKFLOW_STATUS_COMPLETED,
     WORKFLOW_STATUS_FAILED,
     WORKFLOW_STATUS_RUNNING,

@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from threading import RLock
-from typing import Any, Iterable
+from typing import Any
 
 from sqlalchemy.orm import Session
 

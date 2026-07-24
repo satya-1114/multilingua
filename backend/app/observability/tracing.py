@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import contextvars
 import time
-import uuid
 from contextlib import contextmanager
 from threading import RLock
 from typing import Any, Callable, Iterator
@@ -18,8 +17,6 @@ from typing import Any, Callable, Iterator
 from app.core.logging import get_logger
 
 from .correlation import (
-    CorrelationContext,
-    build_context,
     current_correlation,
     new_span_id,
     new_trace_id,

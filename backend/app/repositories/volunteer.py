@@ -8,7 +8,7 @@ layer, not here.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Sequence
+from typing import Sequence
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from app.constants.volunteer import (
     TASK_STATUSES,
     VOLUNTEER_STATUS_AVAILABLE,
-    VOLUNTEER_STATUSES,
 )
 from app.crud.base import CRUDBase
 from app.models.volunteer import Volunteer, VolunteerTask

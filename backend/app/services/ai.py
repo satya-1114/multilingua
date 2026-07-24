@@ -15,14 +15,12 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import asdict
 from typing import Any, AsyncIterator
 
 from app.core.config import settings
 from app.core.exceptions import DomainError, RateLimitError, ValidationError
 from app.services.ai_providers import (
     ChatMessage,
-    Generation,
     build_provider,
     get_provider,
     SUPPORTED_PROVIDERS,

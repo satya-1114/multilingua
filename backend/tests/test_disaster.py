@@ -14,7 +14,6 @@ from sqlalchemy.orm import sessionmaker
 
 from app.constants.disaster import (
     ASSIGNMENT_STATUS_ACCEPTED,
-    ASSIGNMENT_STATUS_CANCELLED,
     ASSIGNMENT_STATUS_COMPLETED,
     ASSIGNMENT_STATUS_IN_PROGRESS,
     DISASTER_SEVERITY_HIGH,
@@ -27,22 +26,18 @@ from app.constants.disaster import (
     DISASTER_TYPE_FIRE,
     DISASTER_TYPE_FLOOD,
 )
-from app.constants.volunteer import VOLUNTEER_STATUS_INACTIVE
 from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
     ValidationError,
 )
-from app.database.base import Base
 from app.models.disaster import Disaster, DisasterAssignment, DisasterAttachment
 from app.models.volunteer import Volunteer
 from app.repositories.disaster import (
     disaster_assignments,
-    disaster_attachments,
     disasters,
 )
-from app.repositories.volunteer import volunteers as volunteer_repo
 from app.services import disaster as dsvc
 from app.services import volunteer as vsvc
 

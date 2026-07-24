@@ -19,9 +19,7 @@ from app.models.user import User
 from app.models.volunteer import Volunteer
 from app.schemas.volunteer import (
     VolunteerCreate,
-    VolunteerDto,
     VolunteerStatus,
-    VolunteerTaskDto,
     VolunteerUpdate,
 )
 from app.services import audit, volunteer as svc

@@ -8,7 +8,6 @@ All queries respect workspace scoping when a ``workspace_id`` is supplied.
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean
 from typing import Any, Iterable, Literal

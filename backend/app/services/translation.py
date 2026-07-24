@@ -20,7 +20,7 @@ import time
 from typing import Any, Iterable
 
 from app.core.config import settings
-from app.core.exceptions import DomainError, ValidationError
+from app.core.exceptions import ValidationError
 from app.services.ai import generate as ai_generate
 
 LANGUAGE_NAMES: dict[str, str] = {

@@ -10,7 +10,6 @@ from app.core.responses import ok
 from app.dependencies.auth import current_user
 from app.dependencies.db import get_db
 from app.dependencies.rbac import invalidate_permission_cache, permission_required
-from app.models.auth_extras import AccountLockout
 from app.models.security import SecurityEvent
 from app.models.user import Session as SessionModel, User
 from app.schemas.auth import LockAccountRequest, MfaEnrollRequest, MfaVerifyRequest

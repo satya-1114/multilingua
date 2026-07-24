@@ -149,7 +149,7 @@ def deliver_recipient(self, recipient_id: str) -> dict:
 
         channel = delivery.channel
         if channel == "email":
-            result = comm.send_email(to=audience.email or "", subject=f"Update from your organization", body=body)
+            result = comm.send_email(to=audience.email or "", subject="Update from your organization", body=body)
         elif channel == "sms":
             result = comm.send_sms(to=audience.phone or "", body=body)
         elif channel == "whatsapp":

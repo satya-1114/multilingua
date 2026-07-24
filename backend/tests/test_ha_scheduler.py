@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
-import pytest
 
 from app.runtime.ha.leader import LeaderElector
 from app.runtime.ha.locking import InMemoryLockProvider

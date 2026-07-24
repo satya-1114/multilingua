@@ -8,7 +8,7 @@ from app.core.responses import ok, paginated
 from app.dependencies.auth import current_user
 from app.dependencies.db import get_db
 from app.dependencies.pagination import PageParams, page_params
-from app.models.notification import Notification, NotificationPreference
+from app.models.notification import Notification
 from app.models.user import User
 from app.repositories import notifications as notif_repo
 from app.schemas.notification import NotificationCreate

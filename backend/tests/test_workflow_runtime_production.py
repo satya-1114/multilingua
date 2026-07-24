@@ -7,10 +7,8 @@ taxonomy and retry semantics.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest

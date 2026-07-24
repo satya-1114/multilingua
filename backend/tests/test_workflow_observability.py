@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import time
-import uuid
 
 import pytest
 
 from app.observability import (
-    CorrelationContext,
     InMemorySpanExporter,
     NoopSpanExporter,
     ObservabilityMetrics,

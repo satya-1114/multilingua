@@ -672,7 +672,6 @@ def test_publish_event_helper_uses_default_bus(monkeypatch):
 
 
 def test_install_default_subscribers_is_idempotent():
-    from app.runtime.events import bus as bus_module
 
     b = WorkflowEventBus()
     assert install_default_subscribers(b) is True

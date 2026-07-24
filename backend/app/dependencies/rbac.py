@@ -7,13 +7,12 @@ import time
 from collections.abc import Iterable
 from typing import Any, Callable
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
     ForbiddenError,
     OrganizationAccessError,
-    UnauthorizedError,
     WorkspaceAccessError,
 )
 from app.dependencies.db import get_db

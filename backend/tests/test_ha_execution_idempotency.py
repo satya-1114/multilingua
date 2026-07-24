@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-import pytest
 
 from app.runtime.ha.idempotency import InMemoryIdempotencyStore
 from app.runtime.result import ExecutionResult

@@ -18,8 +18,6 @@ from app.constants.public_access import (
     QR_STATUS_PENDING,
     QR_STATUS_REVOKED,
     RESOURCE_TYPE_DISASTER,
-    VISIBILITY_DISABLED,
-    VISIBILITY_EXPIRED,
     VISIBILITY_PRIVATE,
     VISIBILITY_PUBLIC,
     VISIBILITY_UNLISTED,
@@ -30,11 +28,9 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from app.database.base import Base
 from app.models.public_access import PublicResource, PublicView, QRCode
 from app.repositories.public_access import (
     public_resources,
-    public_views,
     qr_codes,
 )
 from app.services import public_access as svc

@@ -6,7 +6,6 @@ SQLite in-memory; JSONB columns are swapped for JSON so the tables build.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -32,7 +31,6 @@ from app.schemas.translation import (
     EntityTranslationDto,
     EntityTranslationUpdate,
     TranslationJobCreate,
-    TranslationJobDto,
     TranslationLocaleCreate,
     TranslationLocaleDto,
     TranslationLocaleUpdate,

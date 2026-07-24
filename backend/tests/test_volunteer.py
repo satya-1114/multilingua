@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, String, create_engine
+from sqlalchemy import JSON, create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.constants.volunteer import (
@@ -20,12 +20,10 @@ from app.constants.volunteer import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_IN_PROGRESS,
     TASK_STATUS_PENDING,
-    TASK_STATUS_REJECTED,
     VOLUNTEER_STATUS_AVAILABLE,
     VOLUNTEER_STATUS_INACTIVE,
 )
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from app.database.base import Base
 from app.models.volunteer import Volunteer, VolunteerTask
 from app.repositories.volunteer import volunteer_tasks, volunteers
 from app.services import volunteer as vsvc
@@ -37,7 +35,6 @@ from app.services import volunteer as vsvc
 
 @pytest.fixture(scope="module")
 def sqlite_engine():
-    from sqlalchemy import JSON
 
     from app.models.audit import AuditLog
     from app.models.campaign import Campaign

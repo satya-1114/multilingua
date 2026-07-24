@@ -30,8 +30,6 @@ from app.core.exceptions import (
 )
 from app.models.translation import Translation, TranslationJob, TranslationLocale
 from app.repositories.translation import (
-    translation_jobs as jobs_repo,
-    translation_locales as locales_repo,
     translations as tr_repo,
 )
 from app.services import translation as svc

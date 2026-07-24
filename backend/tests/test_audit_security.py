@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 
 from app.services.audit import SECURITY_EVENTS, security_event
 

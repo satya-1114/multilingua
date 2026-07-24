@@ -11,7 +11,6 @@ from sqlalchemy.orm import sessionmaker
 
 from app.constants.workflow import (
     ACTION_TYPE_NOTIFICATION,
-    TRIGGER_TYPE_SCHEDULE,
 )
 from app.models.workflow import (
     WorkflowAction,
@@ -23,8 +22,6 @@ from app.models.workflow import (
 from app.repositories.workflow import (
     WorkflowActionRepository,
     WorkflowDefinitionRepository,
-    WorkflowExecutionRepository,
-    WorkflowExecutionStepRepository,
     WorkflowTriggerRepository,
 )
 from app.runtime import ActionRegistry, WorkflowRuntimeExecutor, WorkflowRuntimeService
@@ -67,7 +64,6 @@ from app.runtime.exceptions import (
 from app.services.workflow import (
     WorkflowActionService,
     WorkflowDefinitionService,
-    WorkflowExecutionService,
     WorkflowTriggerService,
 )
 

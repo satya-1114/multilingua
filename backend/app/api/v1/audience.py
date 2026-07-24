@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, UploadFile, File
 from fastapi.responses import StreamingResponse

@@ -12,7 +12,6 @@ Supported recipient modes:
 """
 from __future__ import annotations
 
-import uuid
 from typing import Any, Iterable
 
 from app.constants.workflow import ACTION_TYPE_NOTIFICATION

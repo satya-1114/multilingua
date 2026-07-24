@@ -18,7 +18,7 @@ from app.dependencies.auth import current_user
 from app.dependencies.db import get_db
 from app.models.audit import AuditLog
 from app.models.notification import Notification
-from app.models.public_access import PublicResource, PublicView, QRCode
+from app.models.public_access import PublicResource, QRCode
 from app.services import public_access_events, search as search_service
 
 
@@ -29,8 +29,6 @@ from app.services import public_access_events, search as search_service
 
 @pytest.fixture(scope="module")
 def pa_engine():
-    from app.models.organization import Organization
-    from app.models.user import User
 
     PublicResource.__table__.c["metadata"].type = JSON()
     QRCode.__table__.c["metadata"].type = JSON()

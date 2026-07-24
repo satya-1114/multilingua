@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
