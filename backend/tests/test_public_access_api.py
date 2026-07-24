@@ -28,10 +28,11 @@ from app.models.public_access import PublicResource, PublicView, QRCode
 def pa_engine():
     from app.models.organization import Organization
     from app.models.user import User
-    from app.models.audit_log import AuditLog
+    from app.models.audit import AuditLog
 
     PublicResource.__table__.c["metadata"].type = JSON()
     QRCode.__table__.c["metadata"].type = JSON()
+    AuditLog.__table__.c["metadata"].type = JSON()
 
     eng = create_engine(
         "sqlite:///:memory:",
