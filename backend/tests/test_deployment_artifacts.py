@@ -323,7 +323,7 @@ def test_backend_workflow_runs_pytest():
 
 def test_frontend_workflow_typechecks_and_builds():
     text = (CI / "frontend.yml").read_text()
-    assert "tsgo" in text and "bun run build" in text
+    assert "bun run typecheck" in text and "bun run build" in text
 
 
 def test_docker_workflow_builds_both_images():
