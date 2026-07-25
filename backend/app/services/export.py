@@ -32,9 +32,14 @@ def _fields(rows: Sequence[Row], preferred: Sequence[str] | None = None) -> list
 
 
 def to_csv(rows: Sequence[Row], *, fields: Sequence[str] | None = None) -> bytes:
-    buf = io.StringIO()
+    buf = io.StringIO(newline="")
     keys = _fields(rows, fields)
-    writer = csv.DictWriter(buf, fieldnames=keys, extrasaction="ignore")
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=keys,
+        extrasaction="ignore",
+        lineterminator="\n",
+    )
     writer.writeheader()
     for r in rows:
         writer.writerow({k: _stringify(r.get(k)) for k in keys})

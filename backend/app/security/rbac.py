@@ -163,15 +163,15 @@ PERMISSIONS: dict[str, tuple[str, ...]] = {
         "ai:use",
     ),
 
-    "translator": (
-        "translation:*",
+   "translator": (
+    "translation:view",
+    "translation:create",
+    "translation:update",
 
-        "campaign:view",
-
-        "disaster:view",
-
-        "public:view",
-    ),
+    "campaign:view",
+    "disaster:view",
+    "public:view",
+),
 
     "reviewer": (
         "translation:view",

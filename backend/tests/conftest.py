@@ -21,9 +21,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config import settings
+from app.security.rate_limit import default_limiter, _policies
 from app.database.session import engine
 from app.dependencies.db import get_db
 from main import app
+
+from sqlalchemy import text
 
 
 @pytest.fixture(scope="session")
@@ -41,6 +45,25 @@ def test_engine():
     yield engine
 
 
+@pytest.fixture(autouse=True)
+def auth_test_settings(monkeypatch):
+    """
+    Prevent auth rate limiting from interfering with account-lockout tests.
+    """
+    monkeypatch.setattr(settings, "RATE_LIMIT_AUTH_PER_MINUTE", 100)
+
+    # Rebuild cached policies
+    default_limiter.policies = _policies()
+
+    # Reset limiter state
+    default_limiter.store.reset()
+
+    yield
+
+    # Restore policies and clear state
+    default_limiter.policies = _policies()
+    default_limiter.store.reset()   
+
 @pytest.fixture
 def db_session(test_engine):
     Session = sessionmaker(
@@ -56,6 +79,20 @@ def db_session(test_engine):
         yield session
     finally:
         session.close()
+
+        with test_engine.begin() as conn:
+            tables = conn.execute(text("""
+                SELECT tablename
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                  AND tablename <> 'alembic_version'
+            """)).scalars().all()
+
+            if tables:
+                quoted = ", ".join(f'"{t}"' for t in tables)
+                conn.execute(
+                    text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE")
+                )
 
 
 @pytest.fixture

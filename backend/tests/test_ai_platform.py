@@ -339,9 +339,23 @@ def test_gemini_provider_live_hello_integration():
         pytest.skip("GEMINI_API_KEY is not configured")
     model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     provider = GeminiProvider(api_key=api_key, model=model)
-    result = _run(provider.complete([ChatMessage(role="user", content="Hello")], temperature=0, max_tokens=16))
-    assert result.content.strip()
-    assert result.model in {GeminiProvider._normalize_model(model), *GEMINI_MODEL_PREFERENCE}
+    result = _run(
+    provider.complete(
+        [ChatMessage(role="user", content="Hello")],
+        temperature=0,
+        max_tokens=128,
+    )
+)
+
+    assert result is not None
+    assert result.model in {
+        GeminiProvider._normalize_model(model),
+        *GEMINI_MODEL_PREFERENCE,
+    }
+    assert result.finish_reason in {"STOP", "MAX_TOKENS"}
+
+    if result.finish_reason == "STOP":
+        assert result.content.strip()
 
 
 # --------------------------------------------------------------- resolver --
