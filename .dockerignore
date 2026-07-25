@@ -1,0 +1,27 @@
+# Git
+.git
+.github
+
+# Node
+node_modules
+
+# Build outputs
+.output
+.wrangler
+.tanstack
+dist
+build
+
+# Python caches
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+*.pyc
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
