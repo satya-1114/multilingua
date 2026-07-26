@@ -202,7 +202,9 @@ def deliver_recipient(self, recipient_id: str) -> dict:
 
         elif result["status"] == "skipped":
             recipient_row.status = "skipped"
-            recipient_row.error_message = result.get("errorCode") or "skipped"
+            recipient_row.error_message = (
+                result.get("errorCode") or "skipped"
+            )
 
         else:
             recipient_row.status = "failed"
@@ -210,14 +212,15 @@ def deliver_recipient(self, recipient_id: str) -> dict:
                 result.get("errorMessage") or ""
             )[:500]
 
-        # Log EVERY delivery attempt
+        # Log every delivery attempt
         db.add(
             DeliveryLog(
                 delivery_id=delivery.id,
                 recipient_id=recipient_row.id,
                 event="delivery_attempt",
                 success=result["status"] == "sent",
-                message=result.get("errorMessage") or result.get("errorCode"),
+                message=result.get("errorMessage")
+                or result.get("errorCode"),
                 provider_response=result,
             )
         )
@@ -236,7 +239,34 @@ def deliver_recipient(self, recipient_id: str) -> dict:
                     {"recipient_id": recipient_id},
                     recipient_row.error_message or "",
                 )
-                return {"status": "failed"}
+
+        # ---------------------------------------------------------
+        # Update overall Delivery status
+        # ---------------------------------------------------------
+        recipients = (
+            db.query(DeliveryRecipient)
+            .filter(DeliveryRecipient.delivery_id == delivery.id)
+            .all()
+        )
+
+        statuses = [r.status for r in recipients]
+
+        if statuses:
+            if all(status == "delivered" for status in statuses):
+                delivery.status = "completed"
+
+            elif all(status == "failed" for status in statuses):
+                delivery.status = "failed"
+
+            elif any(status == "queued" for status in statuses):
+                # Some recipients are still being processed.
+                pass
+
+            else:
+                # Mixture of delivered/failed/skipped.
+                delivery.status = "partial"
+
+            db.commit()
 
         return {
             "status": recipient_row.status,
@@ -245,7 +275,6 @@ def deliver_recipient(self, recipient_id: str) -> dict:
 
     finally:
         db.close()
-
 
 def _lookup_template(db, *, campaign_id, channel, language):
     from app.models.campaign import CampaignTemplate
