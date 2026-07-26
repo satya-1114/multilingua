@@ -16,7 +16,11 @@ from app.core.logging import get_logger
 from app.database.session import SessionLocal
 from app.models.audience import Audience
 from app.models.campaign import Campaign
-from app.models.communication import Delivery, DeliveryRecipient
+from app.models.communication import (
+    Delivery,
+    DeliveryRecipient,
+    DeliveryLog,
+)
 from app.models.notification import Notification
 from app.models.template import Template
 from app.services import ai as ai_service
@@ -130,58 +134,115 @@ def deliver_recipient(self, recipient_id: str) -> dict:
         recipient_row = db.get(DeliveryRecipient, recipient_id)
         if not recipient_row:
             return {"status": "missing"}
+
         delivery = db.get(Delivery, recipient_row.delivery_id)
         audience = db.get(Audience, recipient_row.audience_id)
+
         if not delivery or not audience:
             recipient_row.status = "failed"
             recipient_row.error_message = "missing_delivery_or_audience"
             db.commit()
             return {"status": "failed"}
 
-        # Locate template — first template matching campaign, channel, language.
-        template = _lookup_template(db, campaign_id=delivery.campaign_id, channel=delivery.channel, language=audience.language)
+        # Locate template
+        template = _lookup_template(
+            db,
+            campaign_id=delivery.campaign_id,
+            channel=delivery.channel,
+            language=audience.language,
+        )
+
         if not template:
             recipient_row.status = "failed"
             recipient_row.error_message = "template_missing"
             db.commit()
             return {"status": "failed"}
+
         body = _render_for(audience, template)
 
         channel = delivery.channel
+
         if channel == "email":
-            result = comm.send_email(to=audience.email or "", subject="Update from your organization", body=body)
+            result = comm.send_email(
+                to=audience.email or "",
+                subject="Update from your organization",
+                body=body,
+            )
         elif channel == "sms":
-            result = comm.send_sms(to=audience.phone or "", body=body)
+            result = comm.send_sms(
+                to=audience.phone or "",
+                body=body,
+            )
         elif channel == "whatsapp":
-            result = comm.send_whatsapp(to=audience.phone or "", body=body)
+            result = comm.send_whatsapp(
+                to=audience.phone or "",
+                body=body,
+            )
         elif channel == "push":
-            result = comm.send_push(to=audience.phone or "", title="Notification", body=body)
+            result = comm.send_push(
+                to=audience.phone or "",
+                title="Notification",
+                body=body,
+            )
         elif channel == "webhook":
-            result = comm.send_webhook(url=audience.email or "", body=body)
+            result = comm.send_webhook(
+                url=audience.email or "",
+                body=body,
+            )
         else:
             recipient_row.status = "failed"
             recipient_row.error_message = f"unsupported_channel:{channel}"
             db.commit()
             return {"status": "failed"}
 
+        # Update recipient status
         if result["status"] == "sent":
             recipient_row.status = "delivered"
             recipient_row.delivered_at = datetime.now(timezone.utc)
+
         elif result["status"] == "skipped":
             recipient_row.status = "skipped"
             recipient_row.error_message = result.get("errorCode") or "skipped"
+
         else:
             recipient_row.status = "failed"
-            recipient_row.error_message = (result.get("errorMessage") or "")[:500]
-            db.commit()
-            # Retry on transient failures.
-            try:
-                raise self.retry(countdown=_backoff(self.request.retries))
-            except MaxRetriesExceededError:
-                _record_dead_letter("delivery.recipient", {"recipient_id": recipient_id}, recipient_row.error_message or "")
-                return {"status": "failed"}
+            recipient_row.error_message = (
+                result.get("errorMessage") or ""
+            )[:500]
+
+        # Log EVERY delivery attempt
+        db.add(
+            DeliveryLog(
+                delivery_id=delivery.id,
+                recipient_id=recipient_row.id,
+                event="delivery_attempt",
+                success=result["status"] == "sent",
+                message=result.get("errorMessage") or result.get("errorCode"),
+                provider_response=result,
+            )
+        )
+
         db.commit()
-        return {"status": recipient_row.status, "provider": result.get("provider")}
+
+        # Retry only failed deliveries
+        if recipient_row.status == "failed":
+            try:
+                raise self.retry(
+                    countdown=_backoff(self.request.retries)
+                )
+            except MaxRetriesExceededError:
+                _record_dead_letter(
+                    "delivery.recipient",
+                    {"recipient_id": recipient_id},
+                    recipient_row.error_message or "",
+                )
+                return {"status": "failed"}
+
+        return {
+            "status": recipient_row.status,
+            "provider": result.get("provider"),
+        }
+
     finally:
         db.close()
 

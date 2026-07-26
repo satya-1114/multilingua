@@ -66,3 +66,4 @@ from app.models.auth_extras import (  # noqa: F401
     TrustedDevice,
     VerificationToken,
 )
+
