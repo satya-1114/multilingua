@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Tuple, List
 
 from sqlalchemy import select, func
@@ -9,18 +8,22 @@ from sqlalchemy.orm import Session
 from app.models.campaign import Campaign, CampaignAudience, CampaignTemplate
 from app.models.audience import Audience
 from app.models.template import Template
-from app.core.exceptions import ValidationError
+from app.core.exceptions import ValidationError, NotFoundError
 
 
 def add_audience(db: Session, campaign_id: Any, audience_ids: list[str]) -> Tuple[int, int, int]:
-    """Assign audience members to a campaign. Returns (added, skipped, new_count).
+    """Assign audience members to a campaign. Returns (added, skipped, total).
 
-    Performs validation and writes within a single transaction. Rolls back on failure.
-    Prevents assignment when campaign is published or archived.
+    Repository responsibilities:
+    - validate existence
+    - add CampaignAudience rows
+    - flush before COUNT
+    - update in-memory campaign.audience_count
+    Do NOT commit/rollback here; router/service owns transactions.
     """
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
-        return 0, len(audience_ids), 0
+        raise NotFoundError("Campaign not found")
 
     if campaign.status in {"published", "archived"}:
         raise ValidationError("Cannot modify audience of a published or archived campaign")
@@ -28,31 +31,29 @@ def add_audience(db: Session, campaign_id: Any, audience_ids: list[str]) -> Tupl
     added = 0
     skipped = 0
 
-    # Use a transactional block to ensure single commit/rollback
-    with db.begin():
-        for audience_id in dict.fromkeys(audience_ids):
-            aud = db.scalar(select(Audience).where(Audience.id == audience_id, Audience.deleted_at.is_(None)))
-            if not aud:
-                skipped += 1
-                continue
+    for audience_id in dict.fromkeys(audience_ids):
+        aud = db.scalar(select(Audience).where(Audience.id == audience_id, Audience.deleted_at.is_(None)))
+        if not aud:
+            skipped += 1
+            continue
 
-            link = db.scalar(
-                select(CampaignAudience).where(
-                    CampaignAudience.campaign_id == campaign.id,
-                    CampaignAudience.audience_id == audience_id,
-                )
+        link = db.scalar(
+            select(CampaignAudience).where(
+                CampaignAudience.campaign_id == campaign.id,
+                CampaignAudience.audience_id == audience_id,
             )
-            if link is None:
-                db.add(CampaignAudience(campaign_id=campaign.id, audience_id=audience_id))
-                added += 1
-            else:
-                skipped += 1
+        )
+        if link is None:
+            db.add(CampaignAudience(campaign_id=campaign.id, audience_id=audience_id))
+            added += 1
+        else:
+            skipped += 1
 
-        # Recompute and persist audience_count in same transaction
-        total = int(db.scalar(select(func.count()).select_from(CampaignAudience).where(CampaignAudience.campaign_id == campaign.id)) or 0)
-        campaign.audience_count = total
-        # No explicit commit here; context manager will commit
-    return added, skipped, campaign.audience_count
+    # Ensure pending inserts are visible to subsequent COUNT()
+    db.flush()
+    total = int(db.scalar(select(func.count()).select_from(CampaignAudience).where(CampaignAudience.campaign_id == campaign.id)) or 0)
+    campaign.audience_count = total
+    return added, skipped, total
 
 
 def list_audience(db: Session, campaign_id: Any, *, page: int = 1, page_size: int = 25, search: str | None = None):
@@ -72,40 +73,42 @@ def list_audience(db: Session, campaign_id: Any, *, page: int = 1, page_size: in
 
 
 def remove_audience(db: Session, campaign_id: Any, audience_id: Any) -> Tuple[bool, int]:
-    """Remove an audience assignment. Returns (removed, new_count)."""
+    """Remove an audience assignment. Returns (removed, total)."""
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
-        return False, 0
+        raise NotFoundError("Campaign not found")
     if campaign.status in {"published", "archived"}:
         raise ValidationError("Cannot modify audience of a published or archived campaign")
 
-    with db.begin():
-        link = db.scalar(
-            select(CampaignAudience).where(
-                CampaignAudience.campaign_id == campaign_id,
-                CampaignAudience.audience_id == audience_id,
-            )
+    link = db.scalar(
+        select(CampaignAudience).where(
+            CampaignAudience.campaign_id == campaign_id,
+            CampaignAudience.audience_id == audience_id,
         )
-        if not link:
-            return False, int(db.scalar(select(func.count()).select_from(CampaignAudience).where(CampaignAudience.campaign_id == campaign_id)) or 0)
-        db.delete(link)
-        total = int(db.scalar(select(func.count()).select_from(CampaignAudience).where(CampaignAudience.campaign_id == campaign_id)) or 0)
-        campaign.audience_count = total
-    return True, campaign.audience_count
+    )
+    if not link:
+        raise NotFoundError("Assignment not found")
+
+    db.delete(link)
+    # Ensure delete is visible to COUNT()
+    db.flush()
+    total = int(db.scalar(select(func.count()).select_from(CampaignAudience).where(CampaignAudience.campaign_id == campaign_id)) or 0)
+    campaign.audience_count = total
+    return True, total
 
 
 def update_audience_count(db: Session, campaign_id: Any) -> int:
     """Recompute and persist Campaign.audience_count. Returns the new count.
 
-    This helper does not commit; callers can use it inside a transaction or rely on repo methods
-    that already update the count.
+    This helper does not commit; callers should commit when appropriate.
     """
+    # Make sure any pending writes are flushed so count is accurate
+    db.flush()
     total = int(db.scalar(select(func.count()).select_from(CampaignAudience).where(CampaignAudience.campaign_id == campaign_id)) or 0)
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
-        return 0
+        raise NotFoundError("Campaign not found")
     campaign.audience_count = total
-    db.refresh(campaign)
     return total
 
 
@@ -114,43 +117,44 @@ def update_audience_count(db: Session, campaign_id: Any) -> int:
 def add_template(db: Session, campaign_id: Any, template_id: Any, channel: str) -> bool:
     """Assign a template to a campaign for a channel. Returns True if added.
 
-    - Normalizes channel to lowercase
-    - Validates campaign and template exist
-    - Validates template supports the channel
-    - Prevents assignment to published/archived campaigns
-    - Uses single transaction
+    Repository responsibilities:
+    - validate existence
+    - normalize channel
+    - validate template supports channel
+    - insert CampaignTemplate
+    - flush so callers can query newly created rows
     """
-    channel_norm = (channel or "").lower()
+    channel_norm = (channel or "").strip().lower()
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
-        return False
+        raise NotFoundError("Campaign not found")
     if campaign.status in {"published", "archived"}:
         raise ValidationError("Cannot modify templates of a published or archived campaign")
     tpl = db.get(Template, template_id)
     if not tpl:
-        return False
-    # Ensure template supports channel (case-insensitive)
-    supported = [c.lower() for c in (tpl.channels or [])]
+        raise NotFoundError("Template not found")
+    # Ensure template supports channel (case-insensitive, normalized)
+    supported = {c.strip().lower() for c in (tpl.channels or [])}
     if channel_norm not in supported:
         raise ValidationError("Template does not support the requested channel")
 
-    with db.begin():
-        link = db.scalar(
-            select(CampaignTemplate).where(
-                CampaignTemplate.campaign_id == campaign.id,
-                CampaignTemplate.template_id == template_id,
-                CampaignTemplate.channel == channel_norm,
-            )
+    link = db.scalar(
+        select(CampaignTemplate).where(
+            CampaignTemplate.campaign_id == campaign.id,
+            CampaignTemplate.template_id == template_id,
+            CampaignTemplate.channel == channel_norm,
         )
-        if link is not None:
-            return False
-        db.add(CampaignTemplate(campaign_id=campaign.id, template_id=template_id, channel=channel_norm))
+    )
+    if link is not None:
+        raise ValidationError("Template assignment already exists")
+
+    db.add(CampaignTemplate(campaign_id=campaign.id, template_id=template_id, channel=channel_norm))
+    db.flush()
     return True
 
 
 def list_templates(db: Session, campaign_id: Any) -> List[dict]:
-    """Return list of assigned templates with metadata (templateId, channel, name, language, version)."""
-    from sqlalchemy import join
+    """Return list of assigned templates with metadata (templateId, channel, name, language, version, createdAt, updatedAt)."""
 
     stmt = select(CampaignTemplate, Template).join(Template, Template.id == CampaignTemplate.template_id).where(
         CampaignTemplate.campaign_id == campaign_id
@@ -164,27 +168,30 @@ def list_templates(db: Session, campaign_id: Any) -> List[dict]:
             "name": tpl.name,
             "language": tpl.language,
             "version": tpl.version,
+            "createdAt": tpl.created_at.isoformat() if getattr(tpl, "created_at", None) else None,
+            "updatedAt": tpl.updated_at.isoformat() if getattr(tpl, "updated_at", None) else None,
         })
     return out
 
 
 def remove_template(db: Session, campaign_id: Any, template_id: Any, channel: str) -> bool:
-    channel_norm = (channel or "").lower()
+    channel_norm = (channel or "").strip().lower()
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
-        return False
+        raise NotFoundError("Campaign not found")
     if campaign.status in {"published", "archived"}:
         raise ValidationError("Cannot modify templates of a published or archived campaign")
 
-    with db.begin():
-        link = db.scalar(
-            select(CampaignTemplate).where(
-                CampaignTemplate.campaign_id == campaign_id,
-                CampaignTemplate.template_id == template_id,
-                CampaignTemplate.channel == channel_norm,
-            )
+    link = db.scalar(
+        select(CampaignTemplate).where(
+            CampaignTemplate.campaign_id == campaign_id,
+            CampaignTemplate.template_id == template_id,
+            CampaignTemplate.channel == channel_norm,
         )
-        if not link:
-            return False
-        db.delete(link)
+    )
+    if not link:
+        raise NotFoundError("Template assignment not found")
+
+    db.delete(link)
+    db.flush()
     return True

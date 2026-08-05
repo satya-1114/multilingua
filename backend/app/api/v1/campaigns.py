@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import NotFoundError, ValidationError, ConflictError
 from app.core.responses import ok, paginated
 from app.dependencies.auth import require_perm
 from app.dependencies.db import get_db
@@ -203,18 +203,12 @@ def publish(cid: str, request: Request, db: Session = Depends(get_db),
     from app.services.campaign_execution import publish as publish_campaign
 
     obj = campaigns.get(db, cid) or (_ for _ in ()).throw(NotFoundError("Campaign not found"))
-    # Auto-approve draft/pending workflow shortcut is handled by the transition
-    # rules — publish requires an approved or scheduled campaign.
-    if obj.status == "draft":
-        _transition(obj, "pending_approval")
-        _transition(obj, "approved")
-    elif obj.status == "pending_approval":
-        _transition(obj, "approved")
-    if obj.status != "scheduled":
-        _transition(obj, "scheduled")
+    # Do not auto-transition state; publishing only allowed from approved or scheduled.
+    if obj.status not in {"approved", "scheduled"}:
+        raise ConflictError(f"Campaign cannot be published from status '{obj.status}'")
     if not obj.starts_at:
         obj.starts_at = datetime.now(timezone.utc)
-    db.commit()
+        db.commit()
     report = publish_campaign(db, campaign_id=str(obj.id), actor_id=user.id, scheduled_at=obj.starts_at)
     db.refresh(obj)
     _audit(db, request, user, "publish", obj)
@@ -272,7 +266,6 @@ def approvals(cid: str, db: Session = Depends(get_db),
 def add_audience(cid: str, payload: CampaignAudienceRequest, request: Request,
                  db: Session = Depends(get_db),
                  user: User = Depends(require_perm("campaign:edit"))):
-    # Validate campaign exists
     obj = campaigns.get(db, cid)
     if not obj:
         raise NotFoundError("Campaign not found")
@@ -281,7 +274,12 @@ def add_audience(cid: str, payload: CampaignAudienceRequest, request: Request,
     if not audience_ids:
         raise ValidationError("audienceIds is required")
 
-    added, skipped, count = campaign_assign_repo.add_audience(db, cid, [str(x) for x in audience_ids])
+    try:
+        added, skipped, count = campaign_assign_repo.add_audience(db, cid, [str(x) for x in audience_ids])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     _audit(db, request, user, "assign_audience", obj)
     return ok({"audienceCount": count, "added": added, "skipped": skipped})
 
@@ -309,9 +307,12 @@ def delete_audience(cid: str, audience_id: str, request: Request,
     obj = campaigns.get(db, cid)
     if not obj:
         raise NotFoundError("Campaign not found")
-    removed, count = campaign_assign_repo.remove_audience(db, cid, audience_id)
-    if not removed:
-        raise NotFoundError("Assignment not found")
+    try:
+        removed, count = campaign_assign_repo.remove_audience(db, cid, audience_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     _audit(db, request, user, "remove_audience", obj)
     return ok({"audienceCount": count})
 
@@ -331,9 +332,12 @@ def add_template(cid: str, payload: CampaignTemplateRequest, request: Request,
     channel = data.get("channel")
     if not template_id or not channel:
         raise ValidationError("templateId and channel are required")
-    added = campaign_assign_repo.add_template(db, cid, template_id, channel)
-    if not added:
-        raise ValidationError("Template assignment failed or duplicate")
+    try:
+        added = campaign_assign_repo.add_template(db, cid, template_id, channel)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     _audit(db, request, user, "assign_template", obj)
     # return assigned templates with metadata
     rows = campaign_assign_repo.list_templates(db, cid)
@@ -359,8 +363,11 @@ def delete_template(cid: str, template_id: str, request: Request, channel: str =
         raise NotFoundError("Campaign not found")
     if not channel:
         raise ValidationError("channel query parameter is required to remove template assignment")
-    removed = campaign_assign_repo.remove_template(db, cid, template_id, channel)
-    if not removed:
-        raise NotFoundError("Template assignment not found")
+    try:
+        removed = campaign_assign_repo.remove_template(db, cid, template_id, channel)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     _audit(db, request, user, "remove_template", obj)
     return ok({"removed": True})
