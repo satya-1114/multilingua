@@ -41,6 +41,13 @@ from app.security.password_policy import (
 )
 from app.security.passwords import hash_password, verify_password
 
+
+
+
+from app.models.organization import Organization
+from app.models.workspace import Workspace, WorkspaceMember
+
+
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 PASSWORD_RESET_TTL_MIN = 30
@@ -177,6 +184,41 @@ def register(
         db.add(role_row)
         db.flush()
     db.add(UserRole(user_id=user.id, role_id=role_row.id))
+
+    # ------------------------------------------------------------------
+    # Create a default organization and workspace for the new user
+    # ------------------------------------------------------------------
+
+    base_name = full_name.strip() or email.split("@")[0]
+
+    org = Organization(
+        name=f"{base_name}'s Organization",
+        slug=f"{email.split('@')[0]}-{secrets.token_hex(3)}",
+        contact_email=email,
+    )
+
+    db.add(org)
+    db.flush()
+
+    workspace = Workspace(
+        organization_id=org.id,
+        name=f"{base_name}'s Workspace",
+        slug=f"{email.split('@')[0]}-{secrets.token_hex(3)}",
+    )
+
+    db.add(workspace)
+    db.flush()
+
+    user.default_workspace_id = workspace.id
+
+    db.add(
+        WorkspaceMember(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role="owner",
+        )
+    )
+
     db.add(PasswordHistory(user_id=user.id, hashed_password=user.hashed_password))
     _record_security_event(db, actor=str(user.id), event="user.registered", ip=ip or "")
     db.commit()

@@ -6,6 +6,7 @@ from app.api.v1 import (
     ai,
     analytics,
     audience,
+    audience_groups,
     auth,
     automation,
     campaigns,
@@ -43,7 +44,8 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(organizations.router, prefix="/organizations", tags=["organizations"])
 api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
-api_router.include_router(audience.router, prefix="/audience", tags=["audience"])
+api_router.include_router(audience.router, prefix="/audience", tags=["audience"])   
+api_router.include_router(audience_groups.router, prefix="/audience-groups", tags=["audience"])
 api_router.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
 api_router.include_router(templates.router, prefix="/templates", tags=["templates"])
 api_router.include_router(media.router, prefix="/media", tags=["media"])

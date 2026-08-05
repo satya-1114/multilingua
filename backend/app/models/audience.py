@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -35,3 +35,35 @@ class AudienceTag(BaseMixin, Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#64748b")
+
+
+class AudienceGroupMember(BaseMixin, Base):
+    """Many-to-many link between Audience and AudienceGroup."""
+
+    __tablename__ = "audience_group_members"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "group_id",
+            "audience_id",
+            name="uq_audience_group_member",
+        ),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("audience_groups.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    audience_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("audience.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
