@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,9 @@ from app.dependencies.pagination import PageParams, page_params
 from app.models.campaign import Approval, Campaign
 from app.models.user import User
 from app.repositories import campaigns
+from app.repositories import campaign_assignments as campaign_assign_repo
 from app.schemas.campaign import CampaignCreate, CampaignUpdate
+from app.schemas.campaign_assignment import CampaignAudienceRequest, CampaignTemplateRequest
 from app.services import audit
 
 router = APIRouter()
@@ -261,3 +263,111 @@ def approvals(cid: str, db: Session = Depends(get_db),
         {"id": str(a.id), "status": a.status, "reviewerId": str(a.reviewer_id) if a.reviewer_id else None,
          "note": a.note, "createdAt": a.created_at.isoformat()} for a in rows
     ]})
+
+
+# --- Campaign audience assignment endpoints ---
+
+
+@router.post("/{cid}/audience", status_code=201)
+def add_audience(cid: str, payload: CampaignAudienceRequest, request: Request,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(require_perm("campaign:edit"))):
+    # Validate campaign exists
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    data = payload.model_dump() if hasattr(payload, "model_dump") else payload
+    audience_ids = data.get("audienceIds") or []
+    if not audience_ids:
+        raise ValidationError("audienceIds is required")
+
+    added, skipped = campaign_assign_repo.add_audience(db, cid, [str(x) for x in audience_ids])
+    count = campaign_assign_repo.update_audience_count(db, cid)
+    _audit(db, request, user, "assign_audience", obj)
+    return ok({"audienceCount": count})
+
+
+@router.get("/{cid}/audience")
+def list_audience(cid: str, pp: PageParams = Depends(page_params), db: Session = Depends(get_db),
+                  _: User = Depends(require_perm("campaign:view"))):
+    items, total = campaign_assign_repo.list_audience(db, cid, page=pp.page, page_size=pp.page_size, search=pp.search)
+    # simple serializer
+    def _serialize_a(a):
+        return {
+            "id": str(a.id),
+            "fullName": a.full_name,
+            "email": a.email,
+            "phone": a.phone,
+            "language": a.language,
+        }
+    return paginated([_serialize_a(x) for x in items], pp.page, pp.page_size, total)
+
+
+@router.delete("/{cid}/audience/{audience_id}")
+def delete_audience(cid: str, audience_id: str, request: Request,
+                    db: Session = Depends(get_db),
+                    user: User = Depends(require_perm("campaign:edit"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    removed = campaign_assign_repo.remove_audience(db, cid, audience_id)
+    if not removed:
+        raise NotFoundError("Assignment not found")
+    count = campaign_assign_repo.update_audience_count(db, cid)
+    _audit(db, request, user, "remove_audience", obj)
+    return ok({"audienceCount": count})
+
+
+# --- Campaign template assignment endpoints ---
+
+
+@router.post("/{cid}/templates", status_code=201)
+def add_template(cid: str, payload: CampaignTemplateRequest, request: Request,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(require_perm("campaign:edit"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    data = payload.model_dump() if hasattr(payload, "model_dump") else payload
+    template_id = str(data.get("templateId"))
+    channel = data.get("channel")
+    if not template_id or not channel:
+        raise ValidationError("templateId and channel are required")
+    added = campaign_assign_repo.add_template(db, cid, template_id, channel)
+    if not added:
+        raise ValidationError("Template assignment failed or duplicate")
+    _audit(db, request, user, "assign_template", obj)
+    # return assigned templates
+    rows = campaign_assign_repo.list_templates(db, cid)
+    out = []
+    for r in rows:
+        # r is CampaignTemplate; include minimal info
+        out.append({"templateId": str(r.template_id), "channel": r.channel})
+    return ok({"items": out})
+
+
+@router.get("/{cid}/templates")
+def list_templates(cid: str, db: Session = Depends(get_db),
+                   _: User = Depends(require_perm("campaign:view"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    rows = campaign_assign_repo.list_templates(db, cid)
+    out = [{"templateId": str(r.template_id), "channel": r.channel} for r in rows]
+    return ok({"items": out})
+
+
+@router.delete("/{cid}/templates/{template_id}")
+def delete_template(cid: str, template_id: str, channel: str = Query(...), request: Request,
+                    db: Session = Depends(get_db),
+                    user: User = Depends(require_perm("campaign:edit"))):
+    obj = campaigns.get(db, cid)
+    if not obj:
+        raise NotFoundError("Campaign not found")
+    if not channel:
+        raise ValidationError("channel query parameter is required to remove template assignment")
+    removed = campaign_assign_repo.remove_template(db, cid, template_id, channel)
+    if not removed:
+        raise NotFoundError("Template assignment not found")
+    _audit(db, request, user, "remove_template", obj)
+    return ok({"removed": True})
