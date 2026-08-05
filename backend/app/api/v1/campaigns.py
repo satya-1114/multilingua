@@ -358,7 +358,7 @@ def list_templates(cid: str, db: Session = Depends(get_db),
 
 
 @router.delete("/{cid}/templates/{template_id}")
-def delete_template(cid: str, template_id: str, channel: str = Query(...), request: Request,
+def delete_template(cid: str, template_id: str, request: Request, channel: str = Query(...),
                     db: Session = Depends(get_db),
                     user: User = Depends(require_perm("campaign:edit"))):
     obj = campaigns.get(db, cid)
