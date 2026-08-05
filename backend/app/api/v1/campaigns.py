@@ -281,10 +281,9 @@ def add_audience(cid: str, payload: CampaignAudienceRequest, request: Request,
     if not audience_ids:
         raise ValidationError("audienceIds is required")
 
-    added, skipped = campaign_assign_repo.add_audience(db, cid, [str(x) for x in audience_ids])
-    count = campaign_assign_repo.update_audience_count(db, cid)
+    added, skipped, count = campaign_assign_repo.add_audience(db, cid, [str(x) for x in audience_ids])
     _audit(db, request, user, "assign_audience", obj)
-    return ok({"audienceCount": count})
+    return ok({"audienceCount": count, "added": added, "skipped": skipped})
 
 
 @router.get("/{cid}/audience")
@@ -310,10 +309,9 @@ def delete_audience(cid: str, audience_id: str, request: Request,
     obj = campaigns.get(db, cid)
     if not obj:
         raise NotFoundError("Campaign not found")
-    removed = campaign_assign_repo.remove_audience(db, cid, audience_id)
+    removed, count = campaign_assign_repo.remove_audience(db, cid, audience_id)
     if not removed:
         raise NotFoundError("Assignment not found")
-    count = campaign_assign_repo.update_audience_count(db, cid)
     _audit(db, request, user, "remove_audience", obj)
     return ok({"audienceCount": count})
 
@@ -337,13 +335,9 @@ def add_template(cid: str, payload: CampaignTemplateRequest, request: Request,
     if not added:
         raise ValidationError("Template assignment failed or duplicate")
     _audit(db, request, user, "assign_template", obj)
-    # return assigned templates
+    # return assigned templates with metadata
     rows = campaign_assign_repo.list_templates(db, cid)
-    out = []
-    for r in rows:
-        # r is CampaignTemplate; include minimal info
-        out.append({"templateId": str(r.template_id), "channel": r.channel})
-    return ok({"items": out})
+    return ok({"items": rows})
 
 
 @router.get("/{cid}/templates")
@@ -353,8 +347,7 @@ def list_templates(cid: str, db: Session = Depends(get_db),
     if not obj:
         raise NotFoundError("Campaign not found")
     rows = campaign_assign_repo.list_templates(db, cid)
-    out = [{"templateId": str(r.template_id), "channel": r.channel} for r in rows]
-    return ok({"items": out})
+    return ok({"items": rows})
 
 
 @router.delete("/{cid}/templates/{template_id}")
